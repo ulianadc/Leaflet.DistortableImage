@@ -19,8 +19,6 @@ L.DistortableCollection = L.FeatureGroup.extend({
       click: this._deselectAll, 
       boxzoomend: this._addSelections 
     }, this);
-
-    this._lastInitialSelected();
   },
 
   onRemove: function() {
@@ -41,22 +39,31 @@ L.DistortableCollection = L.FeatureGroup.extend({
     var layer = e.layer; 
     
     layer.editing.enable();
-    L.DomEvent.on(layer._image, "mousedown", this._deselectOthers, this);
+
     L.DomEvent.on(layer, {
       dragstart: this._dragStartMultiple, 
       drag: this._dragMultiple
     }, this);
- 
+
+    L.DomEvent.on(layer._image, {
+      mousedown: this._deselectOthers,
+      contextmenu: this._longPressMultiSelect  /* Enable longpress for multi select for touch devices. */
+    }, this);
   },
 
   _turnOffEditing: function(e) {
     var layer = e.layer; 
 
     layer.editing.disable();
-    L.DomEvent.off(layer._image, "mousedown", this._deselectOthers, this);
+
     L.DomEvent.off(layer, {
       dragstart: this._dragStartMultiple,
       drag: this._dragMultiple
+    }, this);
+
+    L.DomEvent.off(layer._image, {
+      mousedown: this._deselectOthers,
+      contextmenu: this._longPressMultiSelect
     }, this);
   },
 
@@ -112,20 +119,12 @@ L.DistortableCollection = L.FeatureGroup.extend({
     }, this);
   },
 
-  _lastInitialSelected: function() {
-    var layerArr = this.getLayers();
+  _longPressMultiSelect: function(e) {
+    var image = e.target;
 
-    var initialSelected = layerArr.filter(function(layer) {
-      return layer.options.selected;
-    });
-    
-    if (initialSelected.length !== 0) {
-      this.eachLayer(function(layer) {
-        if (!initialSelected[-1]) {
-          layer._deselect();
-        }
-      });
-    }
+     e.preventDefault();
+     L.DomUtil.toggleClass(image, 'selected');
+     this._addToolbar();
   },
 
   isSelected: function (overlay) {
@@ -165,19 +164,13 @@ L.DistortableCollection = L.FeatureGroup.extend({
   },
 
   _addSelections: function(e) {
-    var box = e.boxZoomBounds,
-      i = 0;
+    var box = e.boxZoomBounds;
 
     this.eachLayer(function(layer) {
-      var edit = layer.editing;
-
-      for (i = 0; i < 4; i++) {
-        if (box.contains(layer.getCorner(i))) {
-          edit._deselect();
-          L.DomUtil.addClass(layer.getElement(), 'selected');
-          if (!this.toolbar) { this._addToolbar(); }
-          break;
-        }
+      var imgBounds = new L.latLngBounds(layer.getCorner(2), layer.getCorner(1));
+      if (box.intersects(imgBounds)) {
+        if (!this.toolbar) { this._addToolbar(); }
+        L.DomUtil.addClass(layer.getElement(), 'selected');
       }
     }, this);
   },
@@ -234,6 +227,10 @@ L.DistortableCollection = L.FeatureGroup.extend({
   },
 
   _deselectAll: function(event) {
+    var oe = event.originalEvent;
+    /* prevents image deselection following the 'boxzoomend' event - note 'shift' must not be released until dragging is complete */
+    if (oe && oe.shiftKey) { return; }
+
     this.eachLayer(function(layer) {
       var edit = layer.editing;
       L.DomUtil.removeClass(layer.getElement(), 'selected');

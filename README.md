@@ -2,6 +2,7 @@ Leaflet.DistortableImage
 ===================
 
 [![Build Status](https://travis-ci.org/publiclab/Leaflet.DistortableImage.svg?branch=master)](https://travis-ci.org/publiclab/Leaflet.DistortableImage)
+[![npm version](https://badge.fury.io/js/leaflet-distortableimage.svg)](https://badge.fury.io/js/leaflet-distortableimage)
 
 A Leaflet extension to distort images -- "rubbersheeting" -- for the [MapKnitter.org](http://mapknitter.org) ([src](https://github.com/publiclab/mapknitter)) image georectification service by [Public Lab](http://publiclab.org). Leaflet.DistortableImage allows for perspectival distortions of images, client-side, using CSS3 transformations in the DOM.
 
@@ -15,6 +16,8 @@ Advantages include:
 * [Full resolution download option](https://github.com/publiclab/Leaflet.DistortableImage/pull/100) for large images, using WebGL acceleration
 
 [Download as zip](https://github.com/publiclab/Leaflet.DistortableImage/releases) or clone the repo to get a local copy.
+
+Also available [on NPM](https://www.npmjs.com/package/leaflet-distortableimage) as `leaflet-distortableimage`
 
 The recommended Google satellite base layer can be integrated using this Leaflet plugin: https://gitlab.com/IvanSanchez/Leaflet.GridLayer.GoogleMutant
 
@@ -97,7 +100,7 @@ For example, to overrwrite the toolbar to only include the `ToggleTransparency` 
 
 ``` JS
 img = L.distortableImageOverlay(
-  'example.png', {
+*   'example.png', {
     // 'corners' is the only required option for this class
     // and is in NW, NE, SW, SE order
     corners: [
@@ -146,7 +149,7 @@ By default, your image will initially appear on the screen as "unselected", mean
 
 Some developers prefer that an image initially appears as "selected" instead of "unselected". In this case, we provide an option to pass `selected: true`.
 
-Note: when working with the multi image interface, the collection group will ensure only the last overlay you pass `selected` to will appear initially selected.
+Note: when working with the multi image interface, only the last overlay you pass `selected: true` to will appear with editing handles _and_ a toolbar.
 
 ### Mode
 
@@ -309,11 +312,16 @@ To add / remove a tool from the toolbar at runtime, we have also added the metho
 ### UI and functionalities 
 Currently it supports multiple image selection and translations, and WIP we are working on porting all editing tools to work for it, such as transparency, etc. Image distortions still use the single-image interface.
 
-  - Multi-selection works with <kbd>cmd</kbd> + `click` to toggle an individual image's inclusion in this interface.
-  - Or <kbd>shift</kbd> + `drag` to use our `BoxSelector` handler to select multiple at once. 
+**How to multi-select:**
+  1. Multi-selection works with <kbd>cmd</kbd> + `click` to toggle an individual image's inclusion in this interface.
+  2. Or <kbd>shift</kbd> + `drag` to use our `BoxSelector` handler to select multiple at once.
+  3. Or for touch devices, `touch` and `hold` (aka `longpress`). 
+
+  **How to un-multi-select:**
   - A single toolbar instance (using `L.control`) renders the set of tools available to use on collections of images.
   - In order to return to the single-image interface, where each `L.popup` toolbar only applies actions on the image it's attached to, you must toggle *all* images out of multi-select or...
   - ...Click on the map or hit the <kbd>esc</kbd> key to quickly deselect all images.
+  - For the aforementioned 3 mutli-select methods, the `BoxSelector` method is the only one that doesn't also toggle _out_ of multi-select mode. 
 
 <hr>
 
