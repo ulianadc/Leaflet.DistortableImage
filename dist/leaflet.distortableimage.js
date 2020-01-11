@@ -1,4 +1,8 @@
 L.DomUtil = L.extend(L.DomUtil, {
+  initTranslation: function(obj) {
+    this.translation = obj;
+  },
+
   getMatrixString: function(m) {
     var is3d = L.Browser.webkit3d || L.Browser.gecko3d || L.Browser.ie3d;
 
@@ -42,15 +46,18 @@ L.DomUtil = L.extend(L.DomUtil, {
   },
 
   confirmDelete: function() {
-    return window.confirm('Are you sure?' +
-      ' This image will be permanently deleted from the map.');
+    return window.confirm(this.translation.confirmImageDelete);
   },
 
   confirmDeletes: function(n) {
-    var humanized = n === 1 ? 'image' : 'images';
+    if (n === 1) {
+      this.confirmDelete();
+      return;
+    }
 
-    return window.confirm('Are you sure? ' + n +
-    ' ' + humanized + ' will be permanently deleted from the map.');
+    var warningMsg = n + ' ' + this.translation.confirmImagesDeletes;
+
+    return window.confirm(warningMsg);
   },
 });
 
@@ -188,7 +195,6 @@ L.MatrixUtil = {
     ]);
   },
 
-
   project: function(m, x, y) {
     var v = L.MatrixUtil.multmv(m, [x, y, 1]);
 
@@ -207,10 +213,9 @@ L.MatrixUtil = {
         .basisToPoints(x1d, y1d, x2d, y2d, x3d, y3d, x4d, y4d);
     var m = L.MatrixUtil.multmm(d, L.MatrixUtil.adj(s));
 
-    /*
- *Normalize to the unique matrix with m[8] == 1.
- * See: http://franklinta.com/2014/09/08/computing-css-matrix3d-transforms/
- */
+    // Normalize to the unique matrix with m[8] == 1.
+    // See: http://franklinta.com/2014/09/08/computing-css-matrix3d-transforms/
+
     return L.MatrixUtil.multsm(1/m[8], m);
   },
 };
@@ -232,6 +237,57 @@ L.TrigUtil = {
 
 };
 
+L.Utils = {
+  initTranslation: function() {
+    var translation = {
+      deleteImage: 'Delete Image',
+      deleteImages: 'Delete Images',
+      distortImage: 'Distort Image',
+      dragImage: 'Drag Image',
+      exportImage: 'Export Image',
+      exportImages: 'Export Images',
+      removeBorder: 'Remove Border',
+      addBorder: 'Add Border',
+      freeRotateImage: 'Free rotate Image',
+      geolocateImage: 'Geolocate Image',
+      lockMode: 'Lock Mode',
+      lockImages: 'Lock Images',
+      makeImageOpaque: 'Make Image Opaque',
+      makeImageTransparent: 'Make Image Transparent',
+      restoreOriginalImageDimensions: 'Restore Original Image Dimension',
+      rotateImage: 'Rotate Image',
+      scaleImage: 'Scale Image',
+      stackToFront: 'Stack to Front',
+      stackToBack: 'Stack to Back',
+      unlockImages: 'Unlock Images',
+      confirmImageDelete:
+        'Are you sure? This image will be permanently deleted from the map.',
+      confirmImagesDeletes:
+        'images will be permanently deleted from the map. Do you really want to do this?',
+    };
+
+    if (!this.options.translation) {
+      this.options.translation = translation;
+    } else {
+      // If the translation for a word is not specified, fallback to English.
+      for (var key in translation) {
+        if (!this.options.translation.hasOwnProperty(key)) {
+          this.options.translation[key] = translation[key];
+        }
+      }
+    }
+
+    L.DomUtil.initTranslation(this.options.translation);
+  },
+
+  getNestedVal: function(obj, key, nestedKey) {
+    var dig = [key, nestedKey];
+    return dig.reduce(function(obj, k) {
+      return obj && obj[k];
+    }, obj);
+  },
+};
+
 L.DistortableImageOverlay = L.ImageOverlay.extend({
 
   options: {
@@ -246,6 +302,7 @@ L.DistortableImageOverlay = L.ImageOverlay.extend({
 
   initialize: function(url, options) {
     L.setOptions(this, options);
+    L.Utils.initTranslation.call(this);
 
     this.edgeMinWidth = this.options.edgeMinWidth;
     this.editable = this.options.editable;
@@ -508,6 +565,32 @@ L.DistortableImageOverlay = L.ImageOverlay.extend({
     return this;
   },
 
+  getAngle: function() {
+    var matrix = L.DomUtil.getStyle(this._image, 'transform')
+        .split('matrix3d')[1]
+        .slice(1, -1)
+        .split(',');
+
+    var row0x = matrix[0];
+    var row0y = matrix[1];
+    var row1x = matrix[4];
+    var row1y = matrix[5];
+
+    var determinant = row0x * row1y - row0y * row1x;
+
+    var angle = Math.atan2(row0y, row0x) * (180 / Math.PI);
+
+    if (determinant < 0) {
+      angle += angle < 0 ? 180 : -180;
+    }
+
+    if (angle < 0) {
+      angle = 360 + angle;
+    }
+
+    return angle;
+  },
+
   scaleBy: function(scale) {
     var map = this._map;
     var center = map.project(this.getCenter());
@@ -527,6 +610,16 @@ L.DistortableImageOverlay = L.ImageOverlay.extend({
     }
 
     this.setCorners(scaledCorners);
+
+    return this;
+  },
+
+  setAngle: function(angleInDeg) {
+    var currentAngleInDeg = this.getAngle();
+    var angleToRotateByInDeg = angleInDeg - currentAngleInDeg;
+
+    var angleInRad = L.TrigUtil.degreesToRadians(angleToRotateByInDeg);
+    this.rotateBy(angleInRad);
 
     return this;
   },
@@ -731,11 +824,17 @@ L.Map.addInitHook(function() {
 L.DistortableCollection = L.FeatureGroup.extend({
   options: {
     editable: true,
+    exportOpts: {
+      exportStartUrl: '//export.mapknitter.org/export',
+      statusUrl: '//export.mapknitter.org',
+      exportUrl: 'http://export.mapknitter.org/',
+    },
   },
 
   initialize: function(options) {
     L.setOptions(this, options);
     L.FeatureGroup.prototype.initialize.call(this, options);
+    L.Utils.initTranslation.call(this);
 
     this.editable = this.options.editable;
   },
@@ -821,7 +920,7 @@ L.DistortableCollection = L.FeatureGroup.extend({
 
   _toggleCollected: function(e, layer) {
     if (e.shiftKey) {
-      /** conditional prevents disabled images from flickering multi-select mode */
+      /* conditional prevents disabled images from flickering multi-select mode */
       if (layer.editing.enabled()) {
         L.DomUtil.toggleClass(e.target, 'collected');
       }
@@ -1122,7 +1221,6 @@ L.EditHandle = L.Marker.extend({
   onAdd: function(map) {
     L.Marker.prototype.onAdd.call(this, map);
     this._bindListeners();
-
     this.updateHandle();
   },
 
@@ -1233,6 +1331,10 @@ L.DistortHandle = L.EditHandle.extend({
   },
 });
 
+L.distortHandle = function(overlay, idx, options) {
+  return new L.DistortHandle(overlay, idx, options);
+};
+
 L.DragHandle = L.EditHandle.extend({
   options: {
     TYPE: 'drag',
@@ -1309,6 +1411,37 @@ L.LockHandle = L.EditHandle.extend({
     }),
   },
 
+  onRemove: function(map) {
+    this.unbindTooltip();
+    L.EditHandle.prototype.onRemove.call(this, map);
+  },
+
+  _bindListeners: function() {
+    var icon = this.getElement();
+
+    L.EditHandle.prototype._bindListeners.call(this);
+
+    L.DomEvent.on(icon, {
+      mousedown: this._tooltipOn,
+      mouseup: this._tooltipOff,
+    }, this);
+
+    L.DomEvent.on(document, 'pointerleave', this._tooltipOff, this);
+  },
+
+  _unbindListeners: function() {
+    var icon = this.getElement();
+
+    L.EditHandle.prototype._bindListeners.call(this);
+
+    L.DomEvent.off(icon, {
+      mousedown: this._tooltipOn,
+      mouseup: this._tooltipOff,
+    }, this);
+
+    L.DomEvent.off(document, 'pointerleave', this._tooltipOff, this);
+  },
+
   /* cannot be dragged */
   _onHandleDrag: function() {
   },
@@ -1317,7 +1450,48 @@ L.LockHandle = L.EditHandle.extend({
     this.setLatLng(this._handled.getCorner(this._corner));
   },
 
+  _tooltipOn: function(e) {
+    if (e.shiftKey) { return; }
+
+    var handlesArr = this._handled.editing._lockHandles;
+
+    this._timer = setTimeout(L.bind(function() {
+      if (this._timeout) { clearTimeout(this._timeout); }
+
+      if (!this.getTooltip()) {
+        this.bindTooltip('Locked!', {permanent: true});
+      } else {
+        handlesArr.eachLayer(function(handle) {
+          if (this !== handle) { handle.closeTooltip(); }
+        });
+      }
+
+      this.openTooltip();
+    }, this), 500);
+  },
+
+  _tooltipOff: function(e) {
+    if (e.shiftKey) { return; }
+
+    var handlesArr = this._handled.editing._lockHandles;
+
+    if (e.currentTarget === document) {
+      handlesArr.eachLayer(function(handle) {
+        handle.closeTooltip();
+      });
+    }
+
+    if (this._timer) { clearTimeout(this._timer); }
+
+    this._timeout = setTimeout(L.bind(function() {
+      this.closeTooltip();
+    }, this), 400);
+  },
 });
+
+L.lockHandle = function(overlay, idx, options) {
+  return new L.LockHandle(overlay, idx, options);
+};
 
 L.RotateHandle = L.EditHandle.extend({
   options: {
@@ -1348,6 +1522,10 @@ L.RotateHandle = L.EditHandle.extend({
     this.setLatLng(this._handled.getCorner(this._corner));
   },
 });
+
+L.rotateHandle = function(overlay, idx, options) {
+  return new L.RotateHandle(overlay, idx, options);
+};
 
 L.ScaleHandle = L.EditHandle.extend({
   options: {
@@ -1397,6 +1575,10 @@ L.ScaleHandle = L.EditHandle.extend({
   },
 });
 
+L.scaleHandle = function(overlay, idx, options) {
+  return new L.ScaleHandle(overlay, idx, options);
+};
+
 /* this is the baseclass other IconSets inherit from,
 * we don't use it directly */
 L.IconSet = L.Class.extend({
@@ -1428,6 +1610,7 @@ L.ToolbarIconSet = L.IconSet.extend({
   _symbols:
     '<symbol viewBox="0 0 18 18" id="border_clear"><path d="M5.25 3.75h1.5v-1.5h-1.5v1.5zm0 6h1.5v-1.5h-1.5v1.5zm0 6h1.5v-1.5h-1.5v1.5zm3-3h1.5v-1.5h-1.5v1.5zm0 3h1.5v-1.5h-1.5v1.5zm-6 0h1.5v-1.5h-1.5v1.5zm0-3h1.5v-1.5h-1.5v1.5zm0-3h1.5v-1.5h-1.5v1.5zm0-3h1.5v-1.5h-1.5v1.5zm0-3h1.5v-1.5h-1.5v1.5zm6 6h1.5v-1.5h-1.5v1.5zm6 3h1.5v-1.5h-1.5v1.5zm0-3h1.5v-1.5h-1.5v1.5zm0 6h1.5v-1.5h-1.5v1.5zm0-9h1.5v-1.5h-1.5v1.5zm-6 0h1.5v-1.5h-1.5v1.5zm6-4.5v1.5h1.5v-1.5h-1.5zm-6 1.5h1.5v-1.5h-1.5v1.5zm3 12h1.5v-1.5h-1.5v1.5zm0-6h1.5v-1.5h-1.5v1.5zm0-6h1.5v-1.5h-1.5v1.5z"/></symbol>' +
     '<symbol viewBox="0 0 18 18" id="border_outer"><path d="M9.75 5.25h-1.5v1.5h1.5v-1.5zm0 3h-1.5v1.5h1.5v-1.5zm3 0h-1.5v1.5h1.5v-1.5zm-10.5-6v13.5h13.5V2.25H2.25zm12 12H3.75V3.75h10.5v10.5zm-4.5-3h-1.5v1.5h1.5v-1.5zm-3-3h-1.5v1.5h1.5v-1.5z"/></symbol>' +
+    '<symbol viewBox="0 0 18 18" id="cancel"><path d="M13.279 5.779l-1.058-1.058L9 7.942 5.779 4.721 4.721 5.779 7.942 9l-3.221 3.221 1.058 1.058L9 10.057l3.221 3.222 1.058-1.058L10.057 9z"/></symbol>' +
     '<symbol viewBox="0 0 18 18" id="crop_rotate"><path d="M5.603 16.117C3.15 14.947 1.394 12.57 1.125 9.75H0C.383 14.37 4.245 18 8.963 18c.172 0 .33-.015.495-.023L6.6 15.113l-.997 1.005zM9.037 0c-.172 0-.33.015-.495.03L11.4 2.888l.998-.998a7.876 7.876 0 0 1 4.477 6.36H18C17.617 3.63 13.755 0 9.037 0zM12 10.5h1.5V6A1.5 1.5 0 0 0 12 4.5H7.5V6H12v4.5zM6 12V3H4.5v1.5H3V6h1.5v6A1.5 1.5 0 0 0 6 13.5h6V15h1.5v-1.5H15V12H6z"/></symbol>' +
     '<symbol viewBox="0 0 18 18" id="delete_forever"><path d="M4.5 14.25c0 .825.675 1.5 1.5 1.5h6c.825 0 1.5-.675 1.5-1.5v-9h-9v9zm1.845-5.34l1.058-1.058L9 9.443l1.59-1.59 1.058 1.058-1.59 1.59 1.59 1.59-1.058 1.058L9 11.558l-1.59 1.59-1.058-1.058 1.59-1.59-1.597-1.59zM11.625 3l-.75-.75h-3.75l-.75.75H3.75v1.5h10.5V3h-2.625z"/></symbol>' +
     '<symbol viewBox="0 0 18 18" id="distort"><path d="M1.7 1.4H6v1.4h5.8V1.4h4.3v4.3h-1.4v5.8h1.4v4.4h-4.3v-1.5H6v1.5H1.7v-4.4h1.4V5.7H1.7V1.4zm10.1 4.3V4.3H6v1.4H4.6v5.8H6V13h5.8v-1.5h1.4V5.7h-1.4zM3.1 2.8v1.5h1.5V2.8H3.1zm10.1 0v1.5h1.5V2.8h-1.5zM3.1 13v1.4h1.5V13H3.1zm10.1 0v1.4h1.5V13h-1.5z"/></symbol>' +
@@ -1537,10 +1720,10 @@ L.BorderAction = L.EditAction.extend({
 
     if (edit._outlined) {
       use = 'border_outer';
-      tooltip = 'Remove Border';
+      tooltip = overlay.options.translation.removeBorder;
     } else {
       use = 'border_clear';
-      tooltip = 'Add Border';
+      tooltip = overlay.options.translation.addBorder;
     }
 
     options = options || {};
@@ -1576,13 +1759,13 @@ L.DeleteAction = L.EditAction.extend({
       * the former should have `parentGroup` defined on it. From there we call the apporpriate keybindings and methods.
       */
     if (edit instanceof L.DistortableImage.Edit) {
-      tooltip = 'Delete Image';
+      tooltip = overlay.options.translation.deleteImage;
       // backspace windows / delete mac
       L.DistortableImage.action_map.Backspace = (
         edit._mode === 'lock' ? '' : '_removeOverlay'
       );
     } else {
-      tooltip = 'Delete Images';
+      tooltip = overlay.options.translation.deleteImages;
       L.DistortableImage.group_action_map.Backspace = (
         edit._mode === 'lock' ? '' : '_removeGroup'
       );
@@ -1613,7 +1796,7 @@ L.DistortAction = L.EditAction.extend({
     options.toolbarIcon = {
       svg: true,
       html: 'distort',
-      tooltip: 'Distort Image',
+      tooltip: overlay.options.translation.distortImage,
       className: 'distort',
     };
 
@@ -1633,7 +1816,7 @@ L.DragAction = L.EditAction.extend({
     options.toolbarIcon = {
       svg: true,
       html: 'drag',
-      tooltip: 'Drag Image',
+      tooltip: overlay.options.translation.dragImage,
       className: 'drag',
     };
 
@@ -1648,16 +1831,21 @@ L.DragAction = L.EditAction.extend({
 });
 
 L.ExportAction = L.EditAction.extend({
+  // This function is executed every time we select an image
   initialize: function(map, overlay, options) {
     var edit = overlay.editing;
     var tooltip;
 
+    this.isExporting = false;
+    this.mouseLeaveSkip = true;
+    this.isHooksExecuted = false;
+
     if (edit instanceof L.DistortableImage.Edit) {
       L.DistortableImage.action_map.e = '_getExport';
-      tooltip = 'Export Image';
+      tooltip = overlay.options.translation.exportImage;
     } else {
-      L.DistortableImage.group_action_map.e = 'startExport';
-      tooltip = 'Export Images';
+      L.DistortableImage.group_action_map.e = 'runExporter';
+      tooltip = overlay.options.translation.exportImages;
     }
 
     options = options || {};
@@ -1673,13 +1861,92 @@ L.ExportAction = L.EditAction.extend({
   addHooks: function() {
     var edit = this._overlay.editing;
 
-    if (edit instanceof L.DistortableImage.Edit) { edit._getExport(); }
-    else {
-      L.IconUtil.toggleXlink(this._link, 'get_app', 'spinner');
-      L.IconUtil.toggleTitle(this._link, 'Export Images', 'Loading...');
-      L.IconUtil.addClassToSvg(this._link, 'loader');
-      edit.startExport();
+    if (edit instanceof L.DistortableImage.Edit) {
+      edit._getExport();
+      return;
     }
+
+    // Make sure that addHooks is executed only once, event listeners will handle the rest
+    if (this.isHooksExecuted) {
+      return;
+    } else {
+      this.isHooksExecuted = true;
+    }
+
+    var toolbarExportElement = this._link.parentElement;
+
+    this.mouseEnterHandler = this.handleMouseEnter.bind(this);
+    this.mouseLeaveHandler = this.handleMouseLeave.bind(this);
+
+    L.DomEvent.on(toolbarExportElement, 'click', function() {
+      if (!this.isExporting) {
+        this.isExporting = true;
+        this.renderExportIcon();
+
+        setTimeout(this.attachMouseEventListeners.bind(this, toolbarExportElement), 100);
+        edit.runExporter().then(
+            function() {
+              this.resetState();
+              this.detachMouseEventListeners(toolbarExportElement);
+            }.bind(this)
+        );
+      } else {
+        // Clicking on the export icon after export has started will be ignored
+        if (this.mouseLeaveSkip) {
+          return;
+        }
+
+        this.resetState();
+        this.detachMouseEventListeners(toolbarExportElement);
+        edit.cancelExport();
+      }
+    }, this);
+  },
+
+  resetState: function() {
+    this.renderDownloadIcon();
+    this.isExporting = false;
+    this.mouseLeaveSkip = true;
+  },
+
+  attachMouseEventListeners: function(element) {
+    element.addEventListener('mouseenter', this.mouseEnterHandler);
+    element.addEventListener('mouseleave', this.mouseLeaveHandler);
+  },
+
+  detachMouseEventListeners: function(element) {
+    element.removeEventListener('mouseenter', this.mouseEnterHandler);
+    element.removeEventListener('mouseleave', this.mouseLeaveHandler);
+  },
+
+  handleMouseEnter: function() {
+    this.renderCancelIcon();
+  },
+
+  handleMouseLeave: function() {
+    if (!this.mouseLeaveSkip) {
+      this.renderExportIcon();
+    } else {
+      this.mouseLeaveSkip = false;
+    }
+  },
+
+  renderDownloadIcon: function() {
+    L.IconUtil.toggleXlink(this._link, 'get_app', 'spinner');
+    L.IconUtil.toggleTitle(this._link, 'Export Images', 'Loading...');
+    L.DomUtil.removeClass(this._link.firstChild, 'loader');
+  },
+
+  renderExportIcon: function() {
+    L.IconUtil.toggleXlink(this._link, 'spinner');
+    L.IconUtil.toggleTitle(this._link, 'Export Images', 'Loading...');
+    L.IconUtil.addClassToSvg(this._link, 'loader');
+  },
+
+  renderCancelIcon: function() {
+    L.IconUtil.toggleXlink(this._link, 'cancel');
+    L.IconUtil.toggleTitle(this._link, 'Cancel Export', 'Loading...');
+    L.DomUtil.removeClass(this._link.firstChild, 'loader');
   },
 });
 
@@ -1689,7 +1956,7 @@ L.FreeRotateAction = L.EditAction.extend({
     options.toolbarIcon = {
       svg: true,
       html: 'crop_rotate',
-      tooltip: 'Free rotate Image',
+      tooltip: overlay.options.translation.freeRotateImage,
       className: 'freeRotate',
     };
 
@@ -1711,7 +1978,7 @@ L.GeolocateAction = L.EditAction.extend({
     options.toolbarIcon = {
       svg: true,
       html: 'explore',
-      tooltip: 'Geolocate Image',
+      tooltip: overlay.options.translation.geolocateImage,
       className: edit._mode === 'lock' ? 'disabled' : '',
     };
 
@@ -1721,7 +1988,6 @@ L.GeolocateAction = L.EditAction.extend({
   addHooks: function() {
     var image = this._overlay.getElement();
 
-    // eslint-disable-next-line new-cap
     EXIF.getData(image, L.EXIF(image));
   },
 });
@@ -1735,13 +2001,13 @@ L.LockAction = L.EditAction.extend({
     if (edit instanceof L.DistortableImage.Edit) {
       L.DistortableImage.action_map.u = '_unlock';
       L.DistortableImage.action_map.l = '_lock';
-      tooltip = 'Lock Mode';
+      tooltip = overlay.options.translation.lockMode;
 
       if (edit._mode === 'lock') { use = 'lock'; }
       else { use = 'unlock'; }
     } else {
       L.DistortableImage.group_action_map.l = '_lockGroup';
-      tooltip = 'Lock Images';
+      tooltip = overlay.options.translation.lockImages;
       use = 'lock';
     }
 
@@ -1773,10 +2039,10 @@ L.OpacityAction = L.EditAction.extend({
 
     if (edit._transparent) {
       use = 'opacity_empty';
-      tooltip = 'Make Image Opaque';
+      tooltip = overlay.options.translation.makeImageOpaque;
     } else {
       use = 'opacity';
-      tooltip = 'Make Image Transparent';
+      tooltip = overlay.options.translation.makeImageTransparent;
     }
 
     options = options || {};
@@ -1794,9 +2060,10 @@ L.OpacityAction = L.EditAction.extend({
 
   addHooks: function() {
     var edit = this._overlay.editing;
+    var link = this._link;
 
-    L.IconUtil.toggleXlink(this._link, 'opacity', 'opacity_empty');
-    L.IconUtil.toggleTitle(this._link, 'Make Image Transparent', 'Make Image Opaque');
+    L.IconUtil.toggleXlink(link, 'opacity', 'opacity_empty');
+    L.IconUtil.toggleTitle(link, 'Make Image Transparent', 'Make Image Opaque');
     edit._toggleOpacity();
   },
 });
@@ -1809,7 +2076,7 @@ L.RevertAction = L.EditAction.extend({
     options.toolbarIcon = {
       svg: true,
       html: 'restore',
-      tooltip: 'Restore Original Image Dimensions',
+      tooltip: overlay.options.translation.restoreOriginalImageDimensions,
       className: edit._mode === 'lock' ? 'disabled' : '',
     };
 
@@ -1827,7 +2094,7 @@ L.RotateAction = L.EditAction.extend({
     options.toolbarIcon = {
       svg: true,
       html: 'rotate',
-      tooltip: 'Rotate Image',
+      tooltip: overlay.options.translation.rotateImage,
       className: 'rotate',
     };
 
@@ -1847,7 +2114,7 @@ L.ScaleAction = L.EditAction.extend({
     options.toolbarIcon = {
       svg: true,
       html: 'scale',
-      tooltip: 'Scale Image',
+      tooltip: overlay.options.translation.scaleImage,
       className: 'scale',
     };
 
@@ -1869,10 +2136,10 @@ L.StackAction = L.EditAction.extend({
 
     if (edit._toggledImage) {
       use = 'flip_to_back';
-      tooltip = 'Stack to Front';
+      tooltip = overlay.options.translation.stackToFront;
     } else {
       use = 'flip_to_front';
-      tooltip = 'Stack to Back';
+      tooltip = overlay.options.translation.stackToBack;
     }
 
     options = options || {};
@@ -1973,7 +2240,7 @@ L.UnlocksAction = L.EditAction.extend({
     options.toolbarIcon = {
       svg: true,
       html: 'unlock',
-      tooltip: 'Unlock Images',
+      tooltip: overlay.options.translation.unlockImages,
     };
 
     L.DistortableImage.group_action_map.u = '_unlockGroup';
@@ -2114,17 +2381,17 @@ L.DistortableImage.Edit = L.Handler.extend({
 
     this._scaleHandles = L.layerGroup();
     for (i = 0; i < 4; i++) {
-      this._scaleHandles.addLayer(new L.ScaleHandle(overlay, i));
+      this._scaleHandles.addLayer(L.scaleHandle(overlay, i));
     }
 
     this._distortHandles = L.layerGroup();
     for (i = 0; i < 4; i++) {
-      this._distortHandles.addLayer(new L.DistortHandle(overlay, i));
+      this._distortHandles.addLayer(L.distortHandle(overlay, i));
     }
 
     this._rotateHandles = L.layerGroup(); // individual rotate
     for (i = 0; i < 4; i++) {
-      this._rotateHandles.addLayer(new L.RotateHandle(overlay, i));
+      this._rotateHandles.addLayer(L.rotateHandle(overlay, i));
     }
 
     // handle includes rotate AND scale
@@ -2135,9 +2402,7 @@ L.DistortableImage.Edit = L.Handler.extend({
 
     this._lockHandles = L.layerGroup();
     for (i = 0; i < 4; i++) {
-      this._lockHandles.addLayer(
-          new L.LockHandle(overlay, i, {draggable: false})
-      );
+      this._lockHandles.addLayer(L.lockHandle(overlay, i, {draggable: false}));
     }
 
     this._handles = {
@@ -2184,14 +2449,30 @@ L.DistortableImage.Edit = L.Handler.extend({
     }
   },
 
+  replaceTool: function(old, next) {
+    if (next.baseClass !== 'leaflet-toolbar-icon' || this.hasTool(next)) {
+      return this;
+    }
+    this.editActions.some(function(item, idx) {
+      if (this.editActions[idx] === old) {
+        this._removeToolbar();
+        this.editActions[idx] = next;
+        this._addToolbar();
+        return true;
+      } else {
+        return false;
+      }
+    }, this);
+    return this;
+  },
+
   addTool: function(value) {
     if (value.baseClass === 'leaflet-toolbar-icon' && !this.hasTool(value)) {
       this._removeToolbar();
       this.editActions.push(value);
       this._addToolbar();
-    } else {
-      return false;
     }
+    return this;
   },
 
   hasTool: function(value) {
@@ -2211,6 +2492,7 @@ L.DistortableImage.Edit = L.Handler.extend({
         return false;
       }
     }, this);
+    return this;
   },
 
   _removeToolbar: function() {
@@ -2527,12 +2809,10 @@ L.DistortableImage.Edit = L.Handler.extend({
     var raisedPoint = ov.getCenter();
     raisedPoint.lat = maxLat;
 
-    try {
-      this.toolbar = L.distortableImage.popupBar(raisedPoint, {
-        actions: this.editActions,
-      }).addTo(map, ov);
-      ov.fire('toolbar:created');
-    } catch (e) { }
+    this.toolbar = L.distortableImage.popupBar(raisedPoint, {
+      actions: this.editActions,
+    }).addTo(map, ov);
+    ov.fire('toolbar:created');
   },
 
   _refresh: function() {
@@ -2630,6 +2910,8 @@ L.DistortableCollection.Edit = L.Handler.extend({
 
   initialize: function(group, options) {
     this._group = group;
+    this._exportOpts = group.options.exportOpts;
+
     L.setOptions(this, options);
 
     L.distortableImage.group_action_map.Escape = '_decollectAll';
@@ -2640,6 +2922,9 @@ L.DistortableCollection.Edit = L.Handler.extend({
     var map = group._map;
 
     this.editActions = this.options.actions;
+    this.runExporter =
+        L.bind(L.Utils.getNestedVal(this, '_exportOpts', 'exporter') ||
+        this.startExport, this);
 
     L.DomEvent.on(document, 'keydown', this._onKeyDown, this);
 
@@ -2651,7 +2936,7 @@ L.DistortableCollection.Edit = L.Handler.extend({
       singleclickon: this._singleClickListeners,
       singleclickoff: this._resetClickListeners,
       singleclick: this._singleClick,
-      boxzoomend: this._addCollections,
+      boxcollectend: this._addCollections,
     }, this);
 
     this._group.editable = true;
@@ -2674,7 +2959,7 @@ L.DistortableCollection.Edit = L.Handler.extend({
       singleclickon: this._singleClickListeners,
       singleclickoff: this._resetClickListeners,
       singleclick: this._singleClick,
-      boxzoomend: this._addCollections,
+      boxcollectend: this._addCollections,
     }, this);
 
     this._decollectAll();
@@ -2730,7 +3015,7 @@ L.DistortableCollection.Edit = L.Handler.extend({
 
     if (e) { oe = e.originalEvent; }
     /**
-     * prevents image deselection following the 'boxzoomend' event - note 'shift' must not be released until dragging is complete
+     * prevents image deselection following the 'boxcollectend' event - note 'shift' must not be released until dragging is complete
      * also prevents deselection following a click on a disabled img by differentiating it from the map
      */
     if (oe && (oe.shiftKey || oe.target instanceof HTMLImageElement)) {
@@ -2774,7 +3059,7 @@ L.DistortableCollection.Edit = L.Handler.extend({
   },
 
   _addCollections: function(e) {
-    var box = e.boxZoomBounds;
+    var box = e.boxCollectBounds;
     var map = this._group._map;
 
     this._group.eachLayer(function(layer) {
@@ -2783,7 +3068,9 @@ L.DistortableCollection.Edit = L.Handler.extend({
       if (layer.isSelected()) { layer.deselect(); }
 
       var imgBounds = L.latLngBounds(layer.getCorner(2), layer.getCorner(1));
-      imgBounds = map._latLngBoundsToNewLayerBounds(imgBounds, map.getZoom(), map.getCenter());
+      var zoom = map.getZoom();
+      var center = map.getCenter();
+      imgBounds = map._latLngBoundsToNewLayerBounds(imgBounds, zoom, center);
       if (box.intersects(imgBounds) && edit.enabled()) {
         if (!this.toolbar) {
           this._addToolbar();
@@ -2813,69 +3100,8 @@ L.DistortableCollection.Edit = L.Handler.extend({
     if (e) { L.DomEvent.stopPropagation(e); }
   },
 
-  startExport: function(opts) {
-    opts = opts || {};
-    opts.collection = opts.collection || this._group.generateExportJson();
-    opts.frequency = opts.frequency || 3000;
-    opts.scale = opts.scale || 100; // switch it to _getAvgCmPerPixel !
-    var statusUrl;
-    var updateInterval;
-
-    // this may be overridden to update the UI to show export progress or completion
-    // eslint-disable-next-line require-jsdoc
-    function _defaultUpdater(data) {
-      data = JSON.parse(data);
-      // optimization: fetch status directly from google storage:
-      if (statusUrl !== data.status_url && data.status_url.match('.json')) {
-        statusUrl = data.status_url;
-      }
-      if (data.status === 'complete') {
-        clearInterval(updateInterval);
-      }
-      if (data.status === 'complete' && data.jpg !== null) {
-        alert('Export succeeded. http://export.mapknitter.org/' + data.jpg);
-      }
-      // TODO: update to clearInterval when status == "failed" if we update that in this file:
-      // https://github.com/publiclab/mapknitter-exporter/blob/main/lib/mapknitterExporter.rb
-      console.log(data);
-    }
-
-    // receives the URL of status.json, and starts running the updater to repeatedly fetch from status.json;
-    // this may be overridden to integrate with any UI
-    // eslint-disable-next-line require-jsdoc
-    function _defaultHandleStatusUrl(data) {
-      console.log(data);
-      statusUrl = '//export.mapknitter.org' + data;
-      opts.updater = opts.updater || _defaultUpdater;
-
-      // repeatedly fetch the status.json
-      updateInterval = setInterval(function intervalUpdater() {
-        $.ajax(statusUrl + '?' + Date.now(), {// bust cache with timestamp
-          type: 'GET',
-          crossDomain: true,
-        }).done(function(data) {
-          opts.updater(data);
-        });
-      }, opts.frequency);
-    }
-
-    // eslint-disable-next-line require-jsdoc
-    function _fetchStatusUrl(collection, scale) {
-      opts.handleStatusUrl = opts.handleStatusUrl || _defaultHandleStatusUrl;
-
-      $.ajax({
-        url: '//export.mapknitter.org/export',
-        crossDomain: true,
-        type: 'POST',
-        data: {
-          collection: JSON.stringify(collection.images),
-          scale: scale,
-        },
-        success: opts.handleStatusUrl, // this handles the initial response
-      });
-    }
-
-    _fetchStatusUrl(opts.collection, opts.scale);
+  cancelExport: function() {
+    clearInterval(this.updateInterval);
   },
 
   _addToolbar: function() {
@@ -2911,9 +3137,8 @@ L.DistortableCollection.Edit = L.Handler.extend({
       this._removeToolbar();
       this.editActions.push(value);
       this._addToolbar();
-    } else {
-      return false;
     }
+    return this;
   },
 
   removeTool: function(value) {
@@ -2927,6 +3152,82 @@ L.DistortableCollection.Edit = L.Handler.extend({
         return false;
       }
     }, this);
+    return this;
+  },
+
+  startExport: function() {
+    return new Promise(function(resolve) {
+      var opts = this._exportOpts;
+      var statusUrl;
+      var self = this;
+      this.updateInterval = null;
+
+      // this may be overridden to update the UI to show export progress or completion
+      function _defaultUpdater(data) {
+        data = JSON.parse(data);
+        // optimization: fetch status directly from google storage:
+        if (data.status_url) {
+          if (statusUrl !== data.status_url && data.status_url.match('.json')) {
+            // if (data.status_url && data.status_url.substr(0,1) === "/") {
+            //   opts.statusUrl = opts.statusUrl + data.status_url;
+            // } else {
+            statusUrl = data.status_url;
+            // }
+          }
+
+          if (data.status === 'complete') {
+            clearInterval(this.updateInterval);
+            resolve();
+            if (data.jpg !== null) {
+              alert('Export succeeded. ' + opts.exportUrl + data.jpg);
+            }
+          }
+
+          // TODO: update to clearInterval when status == "failed" if we update that in this file:
+          // https://github.com/publiclab/mapknitter-exporter/blob/main/lib/mapknitterExporter.rb
+          console.log(data);
+        }
+      }
+
+      // receives the URL of status.json, and starts running the updater to repeatedly fetch from status.json;
+      // this may be overridden to integrate with any UI
+      function _defaultHandleStatusRes(data) {
+        statusUrl = opts.statusUrl + data;
+        // repeatedly fetch the status.json
+        self.updateInterval = setInterval(function intervalUpdater() {
+          $.ajax(statusUrl + '?' + Date.now(), {// bust cache with timestamp
+            type: 'GET',
+            crossDomain: true,
+          }).done(function(data) {
+            opts.updater(data);
+          });
+        }, opts.frequency);
+      }
+
+      // initiate the export
+      function _defaultFetchStatusUrl(opts) {
+        $.ajax({
+          url: opts.exportStartUrl,
+          crossDomain: true,
+          type: 'POST',
+          data: {
+            collection: JSON.stringify(opts.collection.images),
+            scale: opts.scale,
+            upload: true,
+          },
+          success: function(data) { opts.handleStatusRes(data); }, // this handles the initial response
+        });
+      }
+
+      opts.collection = opts.collection || this._group.generateExportJson();
+      opts.frequency = opts.frequency || 3000;
+      opts.scale = opts.scale || 100; // switch it to _getAvgCmPerPixel !
+      opts.updater = opts.updater || _defaultUpdater;
+      opts.handleStatusRes = opts.handleStatusRes || _defaultHandleStatusRes;
+      opts.fetchStatusUrl = opts.fetchStatusUrl || _defaultFetchStatusUrl;
+
+      opts.fetchStatusUrl(opts);
+    }.bind(this));
   },
 });
 
@@ -3314,10 +3615,13 @@ L.Map.BoxCollector = L.Map.BoxZoom.extend({
         this._map.containerPointToLatLng(this._bounds.getTopRight())
     );
 
-    // calls the `project` method but 1st updates the pixel origin - see https://github.com/publiclab/Leaflet.DistortableImage/pull/344
-    bounds = this._map._latLngBoundsToNewLayerBounds(bounds, this._map.getZoom(), this._map.getCenter());
+    var zoom = this._map.getZoom();
+    var center = this._map.getCenter();
 
-    this._map.fire('boxzoomend', {boxZoomBounds: bounds});
+    // calls the `project` method but 1st updates the pixel origin - see https://github.com/publiclab/Leaflet.DistortableImage/pull/344
+    bounds = this._map._latLngBoundsToNewLayerBounds(bounds, zoom, center);
+
+    this._map.fire('boxcollectend', {boxCollectBounds: bounds});
   },
 });
 
@@ -3412,14 +3716,13 @@ L.Map.include({
 
     opts = this.mutantOptions = L.extend({
       mutantOpacity: 0.8,
-      maxZoom: 18,
+      maxZoom: 24,
+      maxNativeZoom: 20,
       minZoom: 0,
       labels: true,
       labelOpacity: 1,
       doubleClickLabels: true,
     }, opts);
-
-    if (opts.maxZoom > 21) { opts.maxZoom = 18; }
 
     if (!opts.labels) {
       this.mutantOptions = L.extend(this.mutantOptions, {
@@ -3430,6 +3733,7 @@ L.Map.include({
 
     this._googleMutant = L.tileLayer(url, {
       maxZoom: opts.maxZoom,
+      maxNativeZoom: opts.maxNativeZoom,
       minZoom: opts.minZoom,
       opacity: opts.mutantOpacity,
     }).addTo(this);
@@ -3456,6 +3760,7 @@ L.Map.include({
       interactive: false,
       opacity: opts.labelOpacity,
       maxZoom: opts.maxZoom,
+      maxNativeZoom: opts.maxNativeZoom,
       minZoom: opts.minZoom,
       ext: 'png',
     }).addTo(this);

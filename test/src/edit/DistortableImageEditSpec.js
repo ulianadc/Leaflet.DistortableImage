@@ -42,11 +42,9 @@ describe('L.DistortableImage.Edit', function() {
   it('Should keep handles on the map in sync with the corners of the image.', function() {
     var corners = overlay.getCorners();
     var edit = overlay.editing;
-    var img = overlay.getElement();
-
     edit.enable();
     // this test applies to a selected image
-    chai.simulateEvent(img, chai.mouseEvents.Click);
+    chai.simulateEvent(overlay.getElement(), 'click');
 
     overlay.setCorner(0, L.latLng(41.7934, -87.6252));
 
@@ -60,6 +58,46 @@ describe('L.DistortableImage.Edit', function() {
     /* After we toggle modes, the freeRotateHandles are on the map and should be synced. */
     edit._freeRotateHandles.eachLayer(function(handle) {
       expect(handle.getLatLng()).to.be.closeToLatLng(corners[handle._corner]);
+    });
+  });
+
+  describe('#replaceTool', function() {
+    it('It should replace an existing action', function() {
+      var old = overlay.editing.editActions[0];
+      var next = overlay.editing.editActions[1];
+      var edit = overlay.editing;
+
+      edit.removeTool(next);
+
+      edit.replaceTool(old, next);
+
+      expect(edit.hasTool(old)).to.be.false;
+      expect(edit.hasTool(next)).to.be.true;
+      expect(edit.editActions[0]).to.equal(next);
+    });
+
+    it('It should do nothing if the first parameter does not exist', function() {
+      var old = overlay.editing.editActions[0];
+      var next = overlay.editing.editActions[1];
+      var edit = overlay.editing;
+
+      edit.removeTool(old);
+
+      edit.replaceTool(old, next);
+
+      expect(edit.hasTool(old)).to.be.false;
+      expect(edit.hasTool(next)).to.be.true;
+    });
+
+    it('It should do nothing if the second parameter already exists', function() {
+      var old = overlay.editing.editActions[0];
+      var next = overlay.editing.editActions[1];
+      var edit = overlay.editing;
+
+      edit.replaceTool(old, next);
+
+      expect(edit.hasTool(old)).to.be.true;
+      expect(edit.hasTool(next)).to.be.true;
     });
   });
 
@@ -106,7 +144,7 @@ describe('L.DistortableImage.Edit', function() {
       // switch to lock handles
       edit._toggleLockMode();
       // select the image to initially create its individual toolbar instance
-      chai.simulateEvent(img, chai.mouseEvents.Click);
+      chai.simulateEvent(overlay.getElement(), 'click');
 
       expect(edit.toolbar).to.not.be.false;
 
@@ -120,7 +158,7 @@ describe('L.DistortableImage.Edit', function() {
     });
   });
 
-  describe('#nextMode', function () {
+  describe('#nextMode', function() {
     beforeEach(function() {
       overlay.editing.enable();
       overlay.select();
@@ -130,22 +168,22 @@ describe('L.DistortableImage.Edit', function() {
       var edit = overlay.editing;
       var modes = edit.getModes();
 
-      edit._mode = 'distort'
+      edit._mode = 'distort';
       var idx = modes.indexOf('distort');
 
-      var newIdx = modes.indexOf(edit.nextMode()._mode)
-      expect(newIdx).to.equal((idx + 1) % modes.length)
+      var newIdx = modes.indexOf(edit.nextMode()._mode);
+      expect(newIdx).to.equal((idx + 1) % modes.length);
     });
 
     it('Will only update if the image is selected, or nextMode was triggerd by dblclick', function() {
       var edit = overlay.editing;
 
       overlay.deselect();
-      expect(edit.nextMode()).to.be.false
+      expect(edit.nextMode()).to.be.false;
 
-      chai.simulateEvent(overlay.getElement(), chai.mouseEvents.Dblclick);
-      setTimeout(function () {
-        expect(edit.nextMode()).to.be.ok
+      chai.simulateEvent(overlay.getElement(), 'dblclick');
+      setTimeout(function() {
+        expect(edit.nextMode()).to.be.ok;
       }, 3000);
     });
 
@@ -155,10 +193,10 @@ describe('L.DistortableImage.Edit', function() {
 
       overlay.on('dblclick', overlaySpy);
       map.on('dblclick', mapSpy);
-      
+
       overlay.fire('dblclick');
 
-      setTimeout(function () {
+      setTimeout(function() {
         expect(overlay.editing.nextMode).to.have.been.called;
         expect(L.DomEvent.stop).to.have.been.called;
 
@@ -167,7 +205,7 @@ describe('L.DistortableImage.Edit', function() {
       }, 3000);
     });
 
-    it('Should call #setMode', function () {
+    it('Should call #setMode', function() {
       var overlaySpy = sinon.spy();
       overlay.on('dblclick', overlaySpy);
 
@@ -177,35 +215,35 @@ describe('L.DistortableImage.Edit', function() {
 
     it('Will still update the mode of an initialized image with suppressToolbar: true', function() {
       ov2.select();
-      expect(ov2.editing.toolbar).to.be.undefined
-      expect(ov2.editing.nextMode()).to.be.ok
-    })
+      expect(ov2.editing.toolbar).to.be.undefined;
+      expect(ov2.editing.nextMode()).to.be.ok;
+    });
   });
 
   describe('#setMode', function() {
     it('Will return false if the passed value is not in the image\'s modes array', function() {
       var edit = overlay.editing;
       overlay.select();
-      expect(edit.setMode('lock')).to.be.ok
-      expect(edit.setMode('blah')).to.be.false
+      expect(edit.setMode('lock')).to.be.ok;
+      expect(edit.setMode('blah')).to.be.false;
     });
 
     it('Will return false if the image is not selected', function() {
       var edit = overlay.editing;
-      expect(edit.setMode('lock')).to.be.false
+      expect(edit.setMode('lock')).to.be.false;
     });
 
     it('Will return false if the passed mode is already the images mode', function() {
       var edit = overlay.editing;
       overlay.select();
-      expect(edit.setMode('lock')).to.be.ok
-      expect(edit.setMode('lock')).to.be.false
+      expect(edit.setMode('lock')).to.be.ok;
+      expect(edit.setMode('lock')).to.be.false;
     });
 
-    it('Will still update the mode of an initialized image with suppressToolbar: true', function () {
+    it('Will still update the mode of an initialized image with suppressToolbar: true', function() {
       ov2.select();
-      expect(ov2.editing.toolbar).to.be.undefined
-      expect(ov2.editing.setMode('lock')).to.be.ok
-    })
+      expect(ov2.editing.toolbar).to.be.undefined;
+      expect(ov2.editing.setMode('lock')).to.be.ok;
+    });
   });
 });

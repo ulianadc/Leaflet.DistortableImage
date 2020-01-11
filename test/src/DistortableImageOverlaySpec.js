@@ -2,8 +2,8 @@ describe('L.DistortableImageOverlay', function() {
   var map, overlay;
 
   beforeEach(function(done) {
-    var mapContainer = L.DomUtil.create('div', '', document.body),
-        fullSize = [document.querySelector('html'), document.body, mapContainer];
+    var mapContainer = L.DomUtil.create('div', '', document.body);
+    var fullSize = [document.querySelector('html'), document.body, mapContainer];
 
     map = L.map(mapContainer).setView([41.7896, -87.5996], 15);
 
@@ -18,15 +18,31 @@ describe('L.DistortableImageOverlay', function() {
         L.latLng(41.7934, -87.6052),
         L.latLng(41.7934, -87.5852),
         L.latLng(41.7834, -87.6052),
-        L.latLng(41.7834, -87.5852)
-      ]
+        L.latLng(41.7834, -87.5852),
+      ],
     }).addTo(map);
 
     /* Forces the image to load before any tests are run. */
-    L.DomEvent.on(overlay._image, 'load', function() { done(); });
+    L.DomEvent.on(overlay._image, 'load', function() { 
+      expect(map.getMaxZoom()).to.equal(Infinity); // before adding any background layers
+      done();
+    });
 
     afterEach(function() {
       L.DomUtil.remove(overlay);
+    });
+  });
+
+  describe('#basic initialization', function() {
+    // we need a maxZoom of 24 so that images of very small areas may be distorted against 
+    // one another even if the background imagery is not good enough to be useful.
+    it('should add Google tile base layer via Google Mutant library, with maxZoom of 24', function(done) {
+      map.addGoogleMutant();
+
+      map.whenReady(function() {
+        expect(map.getMaxZoom()).to.equal(24);
+        done();
+      });
     });
   });
 
@@ -46,13 +62,13 @@ describe('L.DistortableImageOverlay', function() {
   describe('#select', function() {
     it('Allows programmatically selecting a single image', function() {
       expect(overlay._selected).to.be.false
-      expect(overlay.editing.toolbar).to.be.undefined
-      
+      expect(overlay.editing.toolbar).to.be.undefined;
+
       overlay.select();
 
       setTimeout(function() {
-        expect(overlay._selected).to.be.true
-        expect(overlay.editing.toolbar).to.be.true
+        expect(overlay._selected).to.be.true;
+        expect(overlay.editing.toolbar).to.be.true;
       }, 3000);
     });
 
@@ -64,7 +80,7 @@ describe('L.DistortableImageOverlay', function() {
     it('Locked images can be selected', function() {
       overlay.editing._lock();
       overlay.getElement().click();
-      setTimeout(function () {
+      setTimeout(function() {
         expect(overlay.editing.getMode()).to.eql('lock');
         expect(overlay._selected).to.be.true
         expect(overlay.editing.toolbar).to.be.true
@@ -73,30 +89,30 @@ describe('L.DistortableImageOverlay', function() {
 
     it('Returns false if image editing is disabled', function() {
       overlay.editing.disable();
-      expect(overlay.select()).to.be.false
-      expect(overlay._selected).to.be.false
-      expect(overlay.editing.toolbar).to.be.undefined
+      expect(overlay.select()).to.be.false;
+      expect(overlay._selected).to.be.false;
+      expect(overlay.editing.toolbar).to.be.undefined;
     });
-    
+
     it('Returns false if the multiple image editing interface is on', function() {
-      L.DomUtil.addClass(overlay._image, 'collected');
-      expect(overlay.select()).to.be.false
-      expect(overlay._selected).to.be.false
-      expect(overlay.editing.toolbar).to.be.false
+      L.DomUtil.addClass(overlay.getElement(), 'collected');
+      expect(overlay.select()).to.be.false;
+      expect(overlay._selected).to.be.false;
+      expect(overlay.editing.toolbar).to.be.false;
     });
   });
 
   describe('#deselect', function() {
-    beforeEach(function () { // select the image
+    beforeEach(function() { // select the image
       overlay.select();
       setTimeout(function() {
-        expect(overlay._selected).to.be.true
+        expect(overlay._selected).to.be.true;
       }, 3000);
     });
 
     it('Allows programmatically deselecting a single image', function() {
       overlay.deselect();
-      expect(overlay._selected).to.be.false
+      expect(overlay._selected).to.be.false;
     });
 
     it('Is invoked on map click', function() {
@@ -106,21 +122,21 @@ describe('L.DistortableImageOverlay', function() {
 
     it('Returns false if image editing is disabled', function() {
       overlay.editing.disable();
-      expect(overlay.deselect()).to.be.false
-      expect(overlay._selected).to.be.false
+      expect(overlay.deselect()).to.be.false;
+      expect(overlay._selected).to.be.false;
     });
 
     it('Returns false if image is not selected', function() {
-      expect(overlay.deselect()).to.be.ok
-      expect(overlay.deselect()).to.be.false
+      expect(overlay.deselect()).to.be.ok;
+      expect(overlay.deselect()).to.be.false;
     });
   });
 
   describe('#isSelected', function () {
-    it('Only returns true for a selected image', function () {
-      expect(overlay.isSelected()).to.be.false
+    it('Only returns true for a selected image', function() {
+      expect(overlay.isSelected()).to.be.false;
       overlay.select();
-      expect(overlay.isSelected()).to.be.true
+      expect(overlay.isSelected()).to.be.true;
     });
   });
 
@@ -164,7 +180,6 @@ describe('L.DistortableImageOverlay', function() {
 
     it('Maintains image proportions when scaling', function() {
       var center = overlay.getCenter();
-
       expect(Math.round(overlay.getCenter().lat)).to.equal(Math.round(center.lat));
       expect(Math.round(overlay.getCenter().lng)).to.equal(Math.round(center.lng));
     });

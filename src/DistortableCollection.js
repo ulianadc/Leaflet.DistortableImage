@@ -1,11 +1,17 @@
 L.DistortableCollection = L.FeatureGroup.extend({
   options: {
     editable: true,
+    exportOpts: {
+      exportStartUrl: '//export.mapknitter.org/export',
+      statusUrl: '//export.mapknitter.org',
+      exportUrl: 'http://export.mapknitter.org/',
+    },
   },
 
   initialize: function(options) {
     L.setOptions(this, options);
     L.FeatureGroup.prototype.initialize.call(this, options);
+    L.Utils.initTranslation.call(this);
 
     this.editable = this.options.editable;
   },
@@ -91,7 +97,7 @@ L.DistortableCollection = L.FeatureGroup.extend({
 
   _toggleCollected: function(e, layer) {
     if (e.shiftKey) {
-      /** conditional prevents disabled images from flickering multi-select mode */
+      /* conditional prevents disabled images from flickering multi-select mode */
       if (layer.editing.enabled()) {
         L.DomUtil.toggleClass(e.target, 'collected');
       }
