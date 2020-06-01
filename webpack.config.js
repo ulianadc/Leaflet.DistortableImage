@@ -38,6 +38,9 @@ const config = {
     hotUpdateChunkFilename: 'hot/hot-update.js',
     hotUpdateMainFilename: 'hot/hot-update.json',
   },
+  optimization: {
+    minimize: false
+  },
   module: {
     rules: [
       {
